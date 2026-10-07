@@ -251,6 +251,62 @@ def test_correlation_increases_as_confidence_and_iou_disagree() -> None:
     assert misaligned_loss > aligned_loss
 
 
+def test_correlation_scores_images_independently() -> None:
+    """fix 32: CCC is per-image, so batch composition cannot dilute a score.
+
+    Image A pairs high confidence with low IoU (anti-correlated); image B
+    pairs high confidence with high IoU (correlated).  The batch loss must
+    equal the mean of the two per-image losses - the batch-global CCC the
+    old implementation computed would instead mix the moments across images
+    and dilute the disagreement toward zero.
+    """
+    plugin = CorrelationAuxiliaryLoss()
+    target_row = [0.4, 0.4, 0.6, 0.6]
+    shifted_row = [0.55, 0.55, 0.75, 0.75]
+    target = torch.tensor(
+        [[target_row, target_row], [target_row, target_row]], dtype=torch.float32
+    )
+    # both images: first positive matches exactly (IoU 1), second is shifted
+    predicted = torch.tensor(
+        [[target_row, shifted_row], [target_row, shifted_row]], dtype=torch.float32
+    )
+    # image A: high logit on the shifted (low-IoU) positive - anti-correlated
+    # image B: high logit on the exact (IoU 1) positive - correlated
+    logits = torch.tensor(
+        [
+            [[1.0, 0.0, 0.0], [4.0, 0.0, 0.0]],
+            [[4.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        ],
+        dtype=torch.float32,
+    )
+    inputs = AuxiliaryLossInputs(
+        class_logits=logits,
+        predicted_boxes_xyxy=predicted,
+        target_boxes_xyxy=target,
+        target_classes=torch.zeros((2, 2), dtype=torch.long),
+        foreground_mask=torch.ones((2, 2), dtype=torch.bool),
+        anchor_points_xy=torch.full((2, 2, 2), 0.45),
+    )
+
+    batch_loss = float(plugin.compute(inputs).loss)
+    single_a = float(plugin.compute(_slice_image(inputs, 0)).loss)
+    single_b = float(plugin.compute(_slice_image(inputs, 1)).loss)
+
+    assert single_a > single_b  # anti-correlated image scores worse
+    assert batch_loss == pytest.approx((single_a + single_b) / 2, abs=1e-6)
+
+
+def _slice_image(inputs: AuxiliaryLossInputs, index: int) -> AuxiliaryLossInputs:
+    return AuxiliaryLossInputs(
+        class_logits=inputs.class_logits[index : index + 1],
+        predicted_boxes_xyxy=inputs.predicted_boxes_xyxy[index : index + 1],
+        target_boxes_xyxy=inputs.target_boxes_xyxy[index : index + 1],
+        target_classes=inputs.target_classes[index : index + 1],
+        foreground_mask=inputs.foreground_mask[index : index + 1],
+        anchor_points_xy=inputs.anchor_points_xy[index : index + 1],
+    )
+
+
 def test_correlation_requires_two_positives_and_is_autograd_safe() -> None:
     plugin = CorrelationAuxiliaryLoss()
     logits = torch.full((1, 2, 3), 1.0)

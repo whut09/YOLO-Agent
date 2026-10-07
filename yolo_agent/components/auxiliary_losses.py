@@ -47,28 +47,54 @@ class CorrelationAuxiliaryLoss(AuxiliaryLossPlugin):
         self.epsilon = epsilon
 
     def compute(self, inputs: AuxiliaryLossInputs) -> AuxiliaryLossOutput:
+        import torch
+
         mask = inputs.foreground_mask.bool()
         if int(mask.sum()) < 2:
             return AuxiliaryLossOutput(loss=inputs.class_logits.sum() * 0.0)
-        true_logits = _true_class_logits(inputs)[mask]
+        true_logits = _true_class_logits(inputs)
         scores = true_logits.sigmoid().float()
-        quality = _matched_iou(inputs).detach()[mask].float()
-        score_delta = scores - scores.mean()
-        quality_delta = quality - quality.mean()
-        covariance = (score_delta * quality_delta).mean()
+        quality = _matched_iou(inputs).float()
+        mask_f = mask.float()
+
+        # fix 32: per-image concordance.  The batch-global CCC mixed the
+        # score/quality moments of different images and classes, so the
+        # objective no longer measured "confidence tracks localization
+        # quality within one image" - the paper semantics - but a cross-image
+        # artifact dominated by whichever images hold the most positives.
+        count = mask_f.sum(dim=1)  # positives per image
+        valid_image = count.ge(2)
+        if not bool(valid_image.any()):
+            return AuxiliaryLossOutput(loss=inputs.class_logits.sum() * 0.0)
+
+        score_mean = (scores * mask_f).sum(dim=1) / count
+        quality_mean = (quality * mask_f).sum(dim=1) / count
+        score_var = (
+            (scores.square() * mask_f).sum(dim=1) / count - score_mean.square()
+        ).clamp_min(0.0)
+        quality_var = (
+            (quality.square() * mask_f).sum(dim=1) / count - quality_mean.square()
+        ).clamp_min(0.0)
+        covariance = (
+            (scores * quality * mask_f).sum(dim=1) / count
+            - score_mean * quality_mean
+        )
         denominator = (
-            score_delta.square().mean()
-            + quality_delta.square().mean()
-            + (scores.mean() - quality.mean()).square()
+            score_var
+            + quality_var
+            + (score_mean - quality_mean).square()
             + self.epsilon
         )
         concordance = (2.0 * covariance / denominator).clamp(min=-1.0, max=1.0)
-        loss = 1.0 - concordance
+        loss = (1.0 - concordance)[valid_image].mean()
         return AuxiliaryLossOutput(
             loss=loss,
             metrics={
-                "concordance": float(concordance.detach().cpu()),
+                "concordance": float(
+                    concordance[valid_image].mean().detach().cpu()
+                ),
                 "positive_count": float(mask.sum().detach().cpu()),
+                "valid_image_count": float(valid_image.sum().detach().cpu()),
             },
         )
 
