@@ -457,6 +457,61 @@ def test_pilot_3_noise_band_candidate_can_win_cohort_ranking() -> None:
     assert scheduler.study.trial("clear-regression").status == "eliminated"
 
 
+def _register_loss_paper(scheduler: ASHAScheduler, candidate_id: str) -> None:
+    node = _paper_node(candidate_id)
+    node.candidate_config.components = ["loss.quality.correlation"]
+    control = _node("baseline_matched_control")
+    control.changed_variables = {}
+    scheduler.register_trial(
+        trial_id=candidate_id,
+        candidate_id=candidate_id,
+        source_run_id=f"run-{candidate_id}",
+        source_node=node,
+        target_error_facts=[{"fact_type": "area_metric", "subject": "all"}],
+        baseline_control_node=control,
+    )
+
+
+def test_loss_injection_trial_survives_pilot_3_noise_band_as_health_check() -> None:
+    """fix 31: pilot_3 is a health check for loss-injection components.
+
+    Their mAP benefit only exists after training beyond warmup, so a small
+    negative paired delta inside the warmup noise band must not eliminate
+    them before pilot_10 can measure the real effect.
+    """
+    scheduler = ASHAScheduler.create("coco")
+    _register_loss_paper(scheduler, "loss-noise-band")
+    _report(scheduler, "loss-noise-band", "pilot_3", -0.005)
+
+    trial = scheduler.study.trial("loss-noise-band")
+    assert trial.status != "eliminated"
+
+    assignment = scheduler.next_assignment()
+    assert assignment is not None
+    assert assignment.stage_id == "pilot_10"
+    assert assignment.candidate_id == "loss-noise-band"
+
+
+def test_loss_injection_trial_still_eliminated_on_real_regression() -> None:
+    scheduler = ASHAScheduler.create("coco")
+    _register_loss_paper(scheduler, "loss-regression")
+    _report(scheduler, "loss-regression", "pilot_3", -0.02)
+
+    trial = scheduler.study.trial("loss-regression")
+    assert trial.status == "eliminated"
+    assert trial.eliminated_reason == "pilot_3_delta_below_noise_floor"
+
+
+def test_non_loss_trial_still_bound_by_default_pilot_3_floor() -> None:
+    scheduler = ASHAScheduler.create("coco")
+    _register(scheduler, "native-noise-band")
+    _report(scheduler, "native-noise-band", "pilot_3", -0.005)
+
+    trial = scheduler.study.trial("native-noise-band")
+    assert trial.status == "eliminated"
+    assert trial.eliminated_reason == "pilot_3_delta_below_noise_floor"
+
+
 def test_pilot_10_still_rejects_non_positive_delta_after_noise_band_promotion() -> None:
     scheduler = ASHAScheduler.create("coco")
     for candidate_id, delta in [

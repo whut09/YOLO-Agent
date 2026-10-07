@@ -933,7 +933,7 @@ class ASHAScheduler:
                 if (
                     observation is not None
                     and rung.paired_delta_noise_floor is not None
-                    and observation.paired_delta < rung.paired_delta_noise_floor
+                    and observation.paired_delta < _pilot_3_noise_floor(rung, trial)
                 ):
                     trial.status = "eliminated"
                     trial.pending_stage = None
@@ -1309,6 +1309,30 @@ class ASHAStudyStore:
         return scheduler.study.to_yaml(self.path)
 
 
+# fix 31: loss-injection components (auxiliary losses, distillation-style
+# reweighting) act by aligning training targets; their mAP benefit only
+# exists after the model trains at the target learning rate, which the
+# pilot_3 schedule barely reaches even with scaled warmup.  pilot_3 is
+# therefore only a component health check for them: eliminate on a real
+# regression, otherwise let the cohort ranking send them to pilot_10
+# where the positive paired delta gate still applies.
+LOSS_INJECTION_PILOT_3_FLOOR = -0.0100
+
+
+def _trial_uses_loss_injection(trial: ASHATrial) -> bool:
+    components = trial.source_node.candidate_config.components
+    return any(str(item).startswith("loss.") for item in components)
+
+
+def _pilot_3_noise_floor(rung: ASHARungSpec, trial: ASHATrial) -> float:
+    floor = rung.paired_delta_noise_floor
+    if floor is None:
+        return float("-inf")
+    if _trial_uses_loss_injection(trial):
+        return min(floor, LOSS_INJECTION_PILOT_3_FLOOR)
+    return floor
+
+
 def default_asha_rungs() -> list[ASHARungSpec]:
     """Return the fixed-imgsz COCO budget ladder."""
     return [
@@ -1319,7 +1343,12 @@ def default_asha_rungs() -> list[ASHARungSpec]:
             reduction_factor=3,
             minimum_completed=3,
             require_positive_paired_delta=False,
-            paired_delta_noise_floor=-0.0015,
+            # fix 31: the matched control's own pilot_3 curve swings by about
+            # +/-0.003 mAP50-95 between epochs, so a -0.0015 floor randomly
+            # eliminated components whose real benefit is below the noise
+            # band.  Align the floor with the measured noise; pilot_10 and
+            # the full rung still require a positive paired delta.
+            paired_delta_noise_floor=-0.0030,
         ),
         ASHARungSpec(
             stage_id="pilot_10",
