@@ -430,3 +430,36 @@ def test_policy_memory_predicts_full_gain_from_pilot_10_pairs(tmp_path: Path) ->
     assert prediction.pair_count == 2
     assert prediction.full_observation_count == 2
     assert prediction.confidence == 0.35
+
+
+def test_fingerprint_identity_properties_are_cached_and_stable() -> None:
+    """fix 35: repeated identity reads must be cached, not recomputed.
+
+    summarize re-reads transfer_sha256 for every group over the whole
+    memory (80k+ records in a long run).  The uncached property rebuilt
+    the payload, re-serialized it, and re-hashed it on every access, which
+    turned the generate_loop_plan stage into an hours-long hot loop that
+    grew with the memory size.
+    """
+    fingerprint = ActionFingerprint(
+        action="reduce_mosaic_strength",
+        recipe_id="augmentation.reduce_mosaic",
+        component_versions={"augmentation.mosaic": "1.2"},
+        changed_variable="mosaic",
+        before_value=1.0,
+        after_value=0.5,
+        model_family="yolo26",
+        dataset_signature="coco-manifest",
+        protocol_hash="protocol-640",
+        fidelity="pilot_3",
+    )
+
+    values = [fingerprint.transfer_sha256 for _ in range(4)]
+    assert len(set(values)) == 1  # stable across repeated reads
+    assert fingerprint.fingerprint_sha256 == fingerprint.execution_fingerprint_sha256
+    assert values[0] != fingerprint.posterior_sha256  # different payloads hash differently
+
+    # a fresh equal instance must produce the identical identity
+    twin = fingerprint.model_copy()
+    assert twin.transfer_sha256 == values[0]
+    assert twin.posterior_sha256 == fingerprint.posterior_sha256

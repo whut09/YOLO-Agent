@@ -109,11 +109,19 @@ class ActionFingerprint(BaseModel):
 
     @property
     def execution_fingerprint_sha256(self) -> str:
-        payload = self.execution_identity_payload()
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode(
-            "utf-8"
-        )
-        return hashlib.sha256(encoded).hexdigest()
+        cached = self.__dict__.get("_execution_fingerprint_sha256_cache")
+        if cached is None:
+            payload = self.execution_identity_payload()
+            encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode(
+                "utf-8"
+            )
+            cached = hashlib.sha256(encoded).hexdigest()
+            # fix 35: summarize re-reads these identities for every group over
+            # the full memory (80k+ records); without caching each access
+            # rebuilt the payload, re-serialized it, and re-hashed it, which
+            # turned the planning stage into an hours-long hot loop.
+            self.__dict__["_execution_fingerprint_sha256_cache"] = cached
+        return cached
 
     @property
     def fingerprint_sha256(self) -> str:
@@ -122,20 +130,28 @@ class ActionFingerprint(BaseModel):
     @property
     def transfer_sha256(self) -> str:
         """Return an identity shared by pilot/full observations of the same action."""
-        payload = self.execution_identity_payload()
-        payload.update({"fidelity": "unknown", "dataset_manifest_hash": "unknown", "baseline_protocol_hash": "unknown", "seed": "unknown"})
-        payload["snapshot_hash"] = self.snapshot_hash
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
+        cached = self.__dict__.get("_transfer_sha256_cache")
+        if cached is None:
+            payload = self.execution_identity_payload()
+            payload.update({"fidelity": "unknown", "dataset_manifest_hash": "unknown", "baseline_protocol_hash": "unknown", "seed": "unknown"})
+            payload["snapshot_hash"] = self.snapshot_hash
+            encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            cached = hashlib.sha256(encoded).hexdigest()
+            self.__dict__["_transfer_sha256_cache"] = cached
+        return cached
 
     @property
     def posterior_sha256(self) -> str:
         """Return a snapshot-local bucket that can transfer across similar datasets."""
-        payload = self.execution_identity_payload()
-        payload.update({"dataset_manifest_hash": "unknown", "baseline_protocol_hash": "unknown", "seed": "unknown"})
-        payload["snapshot_hash"] = self.snapshot_hash
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
+        cached = self.__dict__.get("_posterior_sha256_cache")
+        if cached is None:
+            payload = self.execution_identity_payload()
+            payload.update({"dataset_manifest_hash": "unknown", "baseline_protocol_hash": "unknown", "seed": "unknown"})
+            payload["snapshot_hash"] = self.snapshot_hash
+            encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            cached = hashlib.sha256(encoded).hexdigest()
+            self.__dict__["_posterior_sha256_cache"] = cached
+        return cached
 
 
 class PolicyCostDistribution(BaseModel):
