@@ -490,3 +490,63 @@ def test_plan_hash_still_tracks_queue_semantics() -> None:
     plan.execution_nodes.append(_node("c"))
 
     assert plan.plan_hash() != baseline_hash
+
+
+def _node_with_frozen_warmup(candidate_id: str, warmup: float) -> ExperimentNode:
+    node = _node(candidate_id)
+    spec = node.command_spec
+    argv = [*spec.argv, f"warmup_epochs={warmup}"]
+    spec = spec.model_copy(update={"argv": argv, "args": argv[1:], "command": spec.command})
+    return node.model_copy(update={"command_spec": spec, "command": spec.display()})
+
+
+def test_asha_stage_rescales_frozen_warmup_to_stage_budget() -> None:
+    # fix 36: pilot_3 with a frozen warmup_epochs=3.0 must be rescaled to the
+    # fix 30 schedule (max(1.0, min(3.0, epochs/3))) or the whole 3-epoch run
+    # is warmup again.
+    plan = build_asha_assignment_plan(
+        run_id="round-warmup",
+        source_node=_node_with_frozen_warmup("a", 3.0),
+        baseline_control_node=_node_with_frozen_warmup("baseline_matched_control", 3.0),
+        stage_id="pilot_3",
+        epochs=3,
+        fraction=0.1,
+        seed=1,
+        seed_index=1,
+    )
+
+    for node in plan.execution_nodes:
+        assert "warmup_epochs=1.0" in node.command_spec.argv
+        assert "warmup_epochs=3.0" not in node.command_spec.argv
+
+
+def test_asha_stage_keeps_warmup_when_budget_allows_three() -> None:
+    plan = build_asha_assignment_plan(
+        run_id="round-warmup-10",
+        source_node=_node_with_frozen_warmup("a", 3.0),
+        baseline_control_node=_node_with_frozen_warmup("baseline_matched_control", 3.0),
+        stage_id="pilot_10",
+        epochs=10,
+        fraction=0.1,
+        seed=1,
+        seed_index=1,
+    )
+
+    for node in plan.execution_nodes:
+        assert "warmup_epochs=3.0" in node.command_spec.argv
+
+
+def test_asha_stage_does_not_inject_warmup_when_absent() -> None:
+    plan = build_asha_assignment_plan(
+        run_id="round-warmup-absent",
+        source_node=_node("a"),
+        baseline_control_node=_control(),
+        stage_id="pilot_3",
+        epochs=3,
+        fraction=0.1,
+        seed=1,
+        seed_index=1,
+    )
+
+    for node in plan.execution_nodes:
+        assert not any(arg.startswith("warmup_epochs=") for arg in node.command_spec.argv)

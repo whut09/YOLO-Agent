@@ -1009,6 +1009,22 @@ def _node_for_stage(
         if run_name:
             values["name"] = run_name
         argv = _replace_cli_values(spec.argv, values)
+        # fix 36: frozen trial commands carry warmup_epochs from the run's
+        # original plan (built before fix 30).  ASHA rewrites epochs per rung
+        # but kept warmup fixed, so pilot_3 spent its entire 3-epoch schedule
+        # in warmup again (args.yaml: epochs=3, warmup_epochs=3.0) and every
+        # paired delta stayed warmup noise.  Rescale warmup together with the
+        # stage budget, mirroring command_from_training_config (fix 30).
+        warmup_raw = _cli_value(argv, "warmup_epochs")
+        if warmup_raw is not None:
+            try:
+                warmup_current = float(warmup_raw)
+            except ValueError:
+                warmup_current = None
+            if warmup_current is not None:
+                warmup_scaled = max(1.0, min(3.0, epochs / 3.0))
+                if warmup_current != warmup_scaled:
+                    argv = _replace_cli_values(argv, {"warmup_epochs": warmup_scaled})
         expected_artifacts = spec.expected_artifacts
         if run_name:
             project = _cli_value(argv, "project")
