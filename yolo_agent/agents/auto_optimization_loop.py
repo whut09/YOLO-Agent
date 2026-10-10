@@ -4000,10 +4000,19 @@ def _register_guarded_pilot_trials(
     )
     retired_candidate_ids: set[str] = set()
     if coverage_payload is not None:
+        # fix 37: blocked_runtime dispositions whose component contracts
+        # resolve valid again are stale; keep those candidates retryable
+        # instead of retiring them on a verdict that no longer reproduces.
+        stale_blocked_runtime = _stale_blocked_runtime_candidate_ids(
+            child,
+            coverage_payload,
+            plan,
+        )
         retired_candidate_ids = {
             record.candidate_id
             for record in coverage_payload.records
             if record.disposition in _ADAPTER_COHORT_RETIRED_DISPOSITIONS
+            and record.candidate_id not in stale_blocked_runtime
         }
 
     trial_status_by_candidate = {
@@ -8104,6 +8113,71 @@ def _load_frozen_maturity_identities(
     if not manifest_path.is_file():
         return {}
     return EffectiveComponentMaturityManifest.from_yaml(manifest_path).by_component()
+
+
+def _stale_blocked_runtime_candidate_ids(
+    child: LoopOrchestrator,
+    coverage_payload: Any,
+    plan: RoundExecutionPlan,
+) -> set[str]:
+    """Return ``blocked_runtime`` candidates whose components now resolve valid.
+
+    fix 37: adapter source edits (fix 30/32/33) invalidated every
+    ``loss.*``/``distillation.*`` frozen maturity identity at once, the failed
+    readiness verdict retired the whole cohort as ``blocked_runtime``, and the
+    search terminated with "add a relevant executable method" even though the
+    adapters themselves prepare fine against the current verified snapshot.  A
+    ``blocked_runtime`` disposition is only final while its rejection still
+    reproduces; when the component contracts resolve valid again, the
+    disposition is stale and the candidate must stay retryable.
+    """
+    blocked_ids = {
+        str(record.candidate_id)
+        for record in coverage_payload.records
+        if record.disposition == "blocked_runtime" and record.candidate_id
+    }
+    if not blocked_ids:
+        return set()
+    nodes_by_candidate = {
+        node.candidate_config.candidate_id: node
+        for node in [*plan.deferred_nodes, *plan.execution_nodes]
+        if node.candidate_config.candidate_id in blocked_ids
+        and node.candidate_config.components
+    }
+    if not nodes_by_candidate:
+        return set()
+    snapshot_path = child.context.metadata.get("research_snapshot_path")
+    snapshot_verified = bool(
+        child.context.metadata.get("research_snapshot_verified", False)
+    )
+    paths: list[Path] = []
+    if snapshot_verified and isinstance(snapshot_path, str) and snapshot_path:
+        paths.append(Path(snapshot_path) / "component_contracts.yaml")
+    else:
+        paths.append(ResourcePaths.COMPONENT_COMPATIBILITY)
+        paths.extend(sorted(ResourcePaths.COMPONENTS_DIR.rglob("*.yaml")))
+    contracts: dict[str, ComponentContract] = {}
+    for path in paths:
+        if not path.is_file():
+            continue
+        try:
+            loaded = load_contracts(path)
+        except (ValueError, KeyError, TypeError):
+            continue
+        for contract in loaded:
+            contracts.setdefault(contract.component_id, contract)
+    resolved = EffectiveMaturityResolver(
+        frozen_identities=_load_frozen_maturity_identities(child),
+    ).resolve(contracts)
+    retryable: set[str] = set()
+    for candidate_id, node in nodes_by_candidate.items():
+        components = node.candidate_config.components
+        if components and all(
+            component in resolved and resolved[component].valid_for_training
+            for component in components
+        ):
+            retryable.add(candidate_id)
+    return retryable
 
 
 def _merge_local_component_contracts(
