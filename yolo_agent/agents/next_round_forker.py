@@ -168,6 +168,7 @@ class NextRoundForker:
         next_round: dict[str, Any],
         missing_evidence: list[str],
     ) -> RunContext:
+        snapshot_binding = base_run_snapshot_binding(self.context)
         return RunContext(
             run_id=new_run_id,
             run_root=self.context.run_root,
@@ -216,17 +217,17 @@ class NextRoundForker:
                 "optimization_objective_path": self.context.metadata.get("optimization_objective_path"),
                 "optimization_objective_hash": self.context.metadata.get("optimization_objective_hash"),
                 "baseline_protocol_hash": self.context.metadata.get("baseline_protocol_hash"),
-                "research_snapshot_hash": self.context.metadata.get("research_snapshot_hash"),
-                "research_snapshot_path": self.context.metadata.get("research_snapshot_path"),
-                "research_snapshot_verified": self.context.metadata.get("research_snapshot_verified", False),
-                "snapshot_status": self.context.metadata.get("snapshot_status", "stale_snapshot"),
-                "stale_reasons": self.context.metadata.get("stale_reasons", []),
-                "paper_method_coverage_version": self.context.metadata.get("paper_method_coverage_version"),
-                "effective_maturity_version": self.context.metadata.get("effective_maturity_version"),
-                "paper_intelligence": self.context.metadata.get("paper_intelligence", "unavailable"),
-                "unavailable_reason": self.context.metadata.get("unavailable_reason"),
+                "research_snapshot_hash": snapshot_binding["research_snapshot_hash"],
+                "research_snapshot_path": snapshot_binding["research_snapshot_path"],
+                "research_snapshot_verified": snapshot_binding["research_snapshot_verified"],
+                "snapshot_status": snapshot_binding["snapshot_status"],
+                "stale_reasons": snapshot_binding["stale_reasons"],
+                "paper_method_coverage_version": snapshot_binding["paper_method_coverage_version"],
+                "effective_maturity_version": snapshot_binding["effective_maturity_version"],
+                "paper_intelligence": snapshot_binding["paper_intelligence"],
+                "unavailable_reason": snapshot_binding["unavailable_reason"],
                 "research_network_allowed": False,
-                "maturity_summary": self.context.metadata.get("maturity_summary", {}),
+                "maturity_summary": snapshot_binding["maturity_summary"],
                 "parent_dataset_version": self.context.dataset_version,
                 "parent_dataset_manifest_sha256": self.context.dataset_manifest_sha256,
                 "next_dataset_version": _next_dataset_version(self.context, next_round),
@@ -243,6 +244,7 @@ class NextRoundForker:
         dataset_diff_path: Path | None = None,
         dataset_diff: DatasetDiff | None = None,
     ) -> dict[str, Any]:
+        snapshot_binding = base_run_snapshot_binding(self.context)
         return {
             "parent_run_id": self.context.run_id,
             "parent_run_dir": self.context.run_dir.as_posix(),
@@ -276,17 +278,17 @@ class NextRoundForker:
             "optimization_objective_path": self.context.metadata.get("optimization_objective_path"),
             "optimization_objective_hash": self.context.metadata.get("optimization_objective_hash"),
             "baseline_protocol_hash": self.context.metadata.get("baseline_protocol_hash"),
-            "research_snapshot_hash": self.context.metadata.get("research_snapshot_hash"),
-            "research_snapshot_path": self.context.metadata.get("research_snapshot_path"),
-            "research_snapshot_verified": self.context.metadata.get("research_snapshot_verified", False),
-            "snapshot_status": self.context.metadata.get("snapshot_status", "stale_snapshot"),
-            "stale_reasons": self.context.metadata.get("stale_reasons", []),
-            "paper_method_coverage_version": self.context.metadata.get("paper_method_coverage_version"),
-            "effective_maturity_version": self.context.metadata.get("effective_maturity_version"),
-            "paper_intelligence": self.context.metadata.get("paper_intelligence", "unavailable"),
-            "unavailable_reason": self.context.metadata.get("unavailable_reason"),
+            "research_snapshot_hash": snapshot_binding["research_snapshot_hash"],
+            "research_snapshot_path": snapshot_binding["research_snapshot_path"],
+            "research_snapshot_verified": snapshot_binding["research_snapshot_verified"],
+            "snapshot_status": snapshot_binding["snapshot_status"],
+            "stale_reasons": snapshot_binding["stale_reasons"],
+            "paper_method_coverage_version": snapshot_binding["paper_method_coverage_version"],
+            "effective_maturity_version": snapshot_binding["effective_maturity_version"],
+            "paper_intelligence": snapshot_binding["paper_intelligence"],
+            "unavailable_reason": snapshot_binding["unavailable_reason"],
             "research_network_allowed": False,
-            "maturity_summary": self.context.metadata.get("maturity_summary", {}),
+            "maturity_summary": snapshot_binding["maturity_summary"],
             "parent_dataset_version": self.context.dataset_version,
             "parent_dataset_manifest_sha256": self.context.dataset_manifest_sha256,
             "dataset_version": child.dataset_version,
@@ -294,6 +296,109 @@ class NextRoundForker:
             "dataset_diff_path": dataset_diff_path.as_posix() if dataset_diff_path is not None else None,
             "dataset_diff": dataset_diff.model_dump(mode="json") if dataset_diff is not None else None,
         }
+
+
+# fix 39: the research snapshot binding is campaign-level state owned by the
+# base run.  An external preflight (cli.run_optimize_command) can rebind the
+# base run to a refreshed snapshot mid-campaign by rewriting only the base
+# run's run_context.yaml; in-memory round contexts never observe that rebind.
+# Forking from memory therefore pins every child to whatever snapshot was
+# current when the driver started, and a stale snapshot fails component
+# contract validation (frozen_adapter_hash_mismatch), which blocks candidates
+# at runtime readiness with missing_component_contract.
+_SNAPSHOT_BINDING_KEYS = (
+    "research_snapshot_hash",
+    "research_snapshot_path",
+    "research_snapshot_verified",
+    "snapshot_status",
+    "stale_reasons",
+    "paper_intelligence",
+    "unavailable_reason",
+    "maturity_summary",
+    "paper_method_coverage_version",
+    "effective_maturity_version",
+)
+_MAX_PARENT_WALK = 512
+
+
+def _base_run_metadata(context: RunContext) -> dict[str, Any]:
+    """Walk the parent chain on disk and return the base run's metadata.
+
+    The base run is the only run without ``parent_run_dir``.  When the chain
+    cannot be read the in-memory metadata is returned unchanged, which keeps
+    runs without a research snapshot (or with a broken chain) on their
+    existing behavior.
+    """
+    metadata: dict[str, Any] = dict(context.metadata)
+    seen: set[Path] = set()
+    run_dir = context.run_dir
+    for _ in range(_MAX_PARENT_WALK):
+        if run_dir in seen:
+            break
+        seen.add(run_dir)
+        context_path = run_dir / "run_context.yaml"
+        if not context_path.is_file():
+            break
+        try:
+            stored = read_yaml(context_path)
+        except (OSError, TypeError, ValueError):
+            break
+        stored_metadata = stored.get("metadata") if isinstance(stored, dict) else None
+        if not isinstance(stored_metadata, dict):
+            break
+        metadata = stored_metadata
+        parent_dir = stored_metadata.get("parent_run_dir")
+        if not parent_dir:
+            break
+        run_dir = Path(parent_dir)
+    return metadata
+
+
+def base_run_snapshot_binding(context: RunContext) -> dict[str, Any]:
+    """Return the base run's current on-disk research snapshot binding.
+
+    Prefer the base run's binding over the in-memory copy so an external
+    rebind of the base run propagates to every future fork, while keys the
+    base run does not carry fall back to the in-memory values (with the same
+    defaults the forker has always applied).
+    """
+    base_metadata = _base_run_metadata(context)
+    binding: dict[str, Any] = {
+        "research_snapshot_hash": context.metadata.get("research_snapshot_hash"),
+        "research_snapshot_path": context.metadata.get("research_snapshot_path"),
+        "research_snapshot_verified": context.metadata.get("research_snapshot_verified", False),
+        "snapshot_status": context.metadata.get("snapshot_status", "stale_snapshot"),
+        "stale_reasons": list(context.metadata.get("stale_reasons") or []),
+        "paper_intelligence": context.metadata.get("paper_intelligence", "unavailable"),
+        "unavailable_reason": context.metadata.get("unavailable_reason"),
+        "maturity_summary": dict(context.metadata.get("maturity_summary") or {}),
+        "paper_method_coverage_version": context.metadata.get("paper_method_coverage_version"),
+        "effective_maturity_version": context.metadata.get("effective_maturity_version"),
+    }
+    binding.update({key: base_metadata[key] for key in _SNAPSHOT_BINDING_KEYS if key in base_metadata})
+    return binding
+
+
+def apply_base_snapshot_binding(context: RunContext) -> bool:
+    """Align a round context with the base run's current disk binding.
+
+    A round directory resumed after an external rebind still carries the
+    binding stamped when the round was first forked; refresh it (the caller
+    persists) so the resumed round validates candidates against the current
+    snapshot instead of the stale one.  Only keys the base run actually
+    carries can drift, so a context that never had a binding is left alone.
+    Returns True when metadata changed.
+    """
+    base_metadata = _base_run_metadata(context)
+    drifted = {
+        key: base_metadata[key]
+        for key in _SNAPSHOT_BINDING_KEYS
+        if key in base_metadata and context.metadata.get(key) != base_metadata[key]
+    }
+    if not drifted:
+        return False
+    context.metadata.update(drifted)
+    return True
 
 
 def _next_dataset_version(context: RunContext, next_round: dict[str, Any]) -> str | None:

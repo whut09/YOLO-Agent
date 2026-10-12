@@ -48,6 +48,7 @@ from yolo_agent.agents.diagnosis_promotion import (
 )
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_json, write_yaml
 from yolo_agent.agents.loop_policy_evaluator import BudgetPolicy, LoopPolicyEvaluationReport
+from yolo_agent.agents.next_round_forker import apply_base_snapshot_binding
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.agents.paper_recipe_materialization.runtime_identity import (
     validate_certified_runtime_node,
@@ -5647,7 +5648,16 @@ def _fork_or_load_child(
             },
         )
     if child_dir.exists():
-        return LoopOrchestrator.from_run_dir(child_dir)
+        child = LoopOrchestrator.from_run_dir(child_dir)
+        # fix 39: a round directory resumed after an external preflight rebound
+        # the base run to a refreshed snapshot still carries the binding
+        # stamped when the round was first forked; follow the base run's
+        # current on-disk binding so the resumed round validates candidates
+        # against the current snapshot instead of the stale one.
+        if apply_base_snapshot_binding(child.context):
+            child.context.to_yaml()
+            child.context.to_json()
+        return child
     return parent.fork_next(child_run_id)
 
 
