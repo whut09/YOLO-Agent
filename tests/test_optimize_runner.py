@@ -2304,6 +2304,23 @@ def test_optimize_event_progress_renders_auto_round_strategy(capsys) -> None:  #
     assert "reason=train command uses only supported options" in output
 
 
+def test_optimize_event_progress_renders_asha_promotion_gate(capsys) -> None:  # type: ignore[no-untyped-def]
+    """fix 38: ASHA promotion-gate decisions render round, candidate, and reason."""
+    _print_event_progress(
+        '{"event_type":"auto_round_decision","status":"blocked",'
+        '"message":"Diagnosis promotion gate rejected gold_gather_distribute_neck at pilot_10.",'
+        '"details":{"round_index":104,"total_rounds":200,"strategy":"asha_promotion_gate",'
+        '"candidate_id":"gold_gather_distribute_neck","stage_id":"pilot_10",'
+        '"recipe":"gold_gather_distribute_neck","changed_variable":"pilot_10",'
+        '"diagnosis_gate_passed":false,"reasons":["diagnosis_gate_rejected"]}}'
+    )
+
+    output = capsys.readouterr().out
+    assert "progress: auto[104/200] strategy=asha_promotion_gate class=blocked" in output
+    assert "recipe=gold_gather_distribute_neck changed=pilot_10" in output
+    assert "reason=diagnosis_gate_rejected" in output
+
+
 def test_optimize_event_progress_hides_ultralytics_noise(capsys) -> None:  # type: ignore[no-untyped-def]
     """Executor log events should hide verbose Ultralytics boilerplate."""
     _print_event_progress(

@@ -1545,6 +1545,7 @@ class AutoOptimizationLoopDriver:
                 execute=execute,
                 executor=executor,
                 auto_import=auto_import,
+                total_rounds=end_round_index,
             )
             asha_assignment = (
                 None
@@ -1773,6 +1774,7 @@ class AutoOptimizationLoopDriver:
         execute: bool,
         executor: str,
         auto_import: bool,
+        total_rounds: int,
     ) -> AutoRoundResult | None:
         """Resume a blocked ASHA round by collecting evidence from completed checkpoints."""
         if not execute:
@@ -1818,7 +1820,13 @@ class AutoOptimizationLoopDriver:
         # fix 28: run the existing-artifact fact import even when the gate is
         # complete - gate-complete nodes with contract targets may still lack
         # the target-class facts the pairing requests (r46 control).
-        _import_existing_coco_error_facts(child, execution_nodes, completeness)
+        _import_existing_coco_error_facts(
+            child,
+            execution_nodes,
+            completeness,
+            round_index=round_index,
+            total_rounds=total_rounds,
+        )
         completeness = _persist_pilot_evidence_completeness(child, execution_nodes)
         if any(not item.complete for item in completeness):
             _enqueue_coco_evidence_recovery(child, execution_nodes, completeness)
@@ -1873,6 +1881,9 @@ class AutoOptimizationLoopDriver:
                 else "COCO evidence recovery remains incomplete; no ASHA promotion decision was made."
             ),
             details={
+                "round_index": round_index,
+                "total_rounds": total_rounds,
+                "strategy": "asha_evidence_recovery",
                 "assignment_id": assignment.assignment_id,
                 "candidate_id": candidate_node.candidate_config.candidate_id,
                 "evidence_complete": observation.evidence_complete,
@@ -2007,7 +2018,13 @@ class AutoOptimizationLoopDriver:
             # fix 28: run the existing-artifact fact import even when the gate
             # is complete - gate-complete nodes with contract targets may
             # still lack the target-class facts the pairing requests.
-            _import_existing_coco_error_facts(child, execution_nodes, completeness)
+            _import_existing_coco_error_facts(
+                child,
+                execution_nodes,
+                completeness,
+                round_index=round_index,
+                total_rounds=total_rounds,
+            )
             completeness = _persist_pilot_evidence_completeness(child, execution_nodes)
             if any(not item.complete for item in completeness):
                 _enqueue_coco_evidence_recovery(child, execution_nodes, completeness)
@@ -2147,6 +2164,9 @@ class AutoOptimizationLoopDriver:
                     f"{assignment.candidate_id} at {assignment.stage_id}."
                 ),
                 details={
+                    "round_index": round_index,
+                    "total_rounds": total_rounds,
+                    "strategy": "asha_promotion_gate",
                     "candidate_id": assignment.candidate_id,
                     "stage_id": assignment.stage_id,
                     "diagnosis_gate_passed": observation.diagnosis_gate_passed,
@@ -2155,6 +2175,9 @@ class AutoOptimizationLoopDriver:
                     "paired_delta": observation.paired_delta,
                     "latency_regression": observation.latency_regression,
                     "model_size_regression": observation.model_size_regression,
+                    "recipe": assignment.candidate_id,
+                    "changed_variable": assignment.stage_id,
+                    "reasons": observation.promotion_rejection_reasons,
                 },
             )
             if not observation.evidence_complete:
@@ -2263,6 +2286,8 @@ class AutoOptimizationLoopDriver:
                             scheduler,
                             child,
                             executable_nodes,
+                            round_index=round_index,
+                            total_rounds=total_rounds,
                         )
                         bootstrap_scheduled = bool(
                             child.context.metadata.get("hard_negative_bootstrap_scheduled")
@@ -2350,6 +2375,8 @@ class AutoOptimizationLoopDriver:
                                         scheduler,
                                         child,
                                         executable_nodes,
+                                        round_index=round_index,
+                                        total_rounds=total_rounds,
                                     )
                                     if registered:
                                         stop_reason = (
@@ -2550,6 +2577,9 @@ def _import_existing_coco_error_facts(
     orchestrator: LoopOrchestrator,
     nodes: list[ExperimentNode],
     results: list[PilotEvidenceCompletenessResult],
+    *,
+    round_index: int | None = None,
+    total_rounds: int | None = None,
 ) -> list[PilotEvidenceCompletenessResult]:
     """Import missing facts from completed COCO artifacts without rerunning eval."""
     results_by_node = {item.node_id: item for item in results}
@@ -2762,12 +2792,23 @@ def _import_existing_coco_error_facts(
         )
         imported.append(node.node_id)
     if imported:
+        details: dict[str, Any] = {
+            "strategy": "import_error_facts",
+            "node_ids": imported,
+            "action": "import_current_node_error_facts",
+        }
+        # fix 38: carry round context when known so the CLI renders
+        # auto[N/M] instead of auto[?/?] for import-only rounds.
+        if round_index is not None:
+            details["round_index"] = round_index
+        if total_rounds is not None:
+            details["total_rounds"] = total_rounds
         EventLog(orchestrator.context.events_path).append(
             run_id=orchestrator.context.run_id,
             event_type="auto_round_decision",
             status="completed",
             message="Imported missing structured COCO facts from existing evaluation artifacts; no evaluation was rerun.",
-            details={"node_ids": imported, "action": "import_current_node_error_facts"},
+            details=details,
         )
     return _persist_pilot_evidence_completeness(orchestrator, nodes) if imported else results
 
@@ -3788,8 +3829,18 @@ def _register_guarded_pilot_trials(
     scheduler: ASHAScheduler,
     child: LoopOrchestrator,
     executable_nodes: list[ExperimentNode],
+    *,
+    round_index: int | None = None,
+    total_rounds: int | None = None,
 ) -> int:
     """Register guarded recipes without granting them training budget directly."""
+    # fix 38: round context for auto_round_decision events so the CLI renders
+    # auto[N/M] instead of auto[?/?]; omitted when the caller has no round.
+    round_context: dict[str, Any] = {}
+    if round_index is not None:
+        round_context["round_index"] = round_index
+    if total_rounds is not None:
+        round_context["total_rounds"] = total_rounds
     considered = 0
     runnable_trial_ids: set[str] = set()
     terminal_rejections = 0
@@ -4104,6 +4155,8 @@ def _register_guarded_pilot_trials(
                     "overall mAP, not a small-object-only metric."
                 ),
                 details={
+                    **round_context,
+                    "strategy": "objective_scope",
                     "candidate_id": source.candidate_config.candidate_id,
                     "adapter_ids": source.candidate_config.components,
                     "reason": "small_object_method_out_of_scope_for_overall_map",
@@ -4123,6 +4176,8 @@ def _register_guarded_pilot_trials(
                     "methods take precedence over native YOLO tuning."
                 ),
                 details={
+                    **round_context,
+                    "strategy": "adapter_precedence",
                     "candidate_id": source.candidate_config.candidate_id,
                     "reason": "native_fallback_deferred_for_adapter_methods",
                     "budget_authority": "ASHA",
@@ -4201,6 +4256,8 @@ def _register_guarded_pilot_trials(
                     f"Skipped {source.candidate_config.candidate_id}: scalar HPO is disabled."
                 ),
                 details={
+                    **round_context,
+                    "strategy": "scalar_hpo_disabled",
                     "candidate_id": source.candidate_config.candidate_id,
                     "scalar_hpo_enabled": False,
                     "budget_authority": "ASHA",
@@ -4230,6 +4287,8 @@ def _register_guarded_pilot_trials(
                         "runtime readiness failed for this candidate."
                     ),
                     details={
+                        **round_context,
+                        "strategy": "runtime_readiness",
                         "candidate_id": source.candidate_config.candidate_id,
                         "adapter_ids": source.candidate_config.components,
                         "blocked_by": blockers,
@@ -4281,6 +4340,8 @@ def _register_guarded_pilot_trials(
                         "end-to-end certification is incomplete."
                     ),
                     details={
+                        **round_context,
+                        "strategy": "component_certification",
                         "candidate_id": source.candidate_config.candidate_id,
                         "adapter_ids": source.candidate_config.components,
                         "blocked_by": component_certification.blockers,
@@ -4306,6 +4367,8 @@ def _register_guarded_pilot_trials(
                         "runtime is incomplete."
                     ),
                     details={
+                        **round_context,
+                        "strategy": "certified_runtime",
                         "candidate_id": source.candidate_config.candidate_id,
                         "adapter_ids": source.candidate_config.components,
                         "blocked_by": runtime_errors,
@@ -4333,6 +4396,8 @@ def _register_guarded_pilot_trials(
                         "teacher/student protocol is incomplete."
                     ),
                     details={
+                        **round_context,
+                        "strategy": "distillation_protocol",
                         "candidate_id": source.candidate_config.candidate_id,
                         "adapter_ids": source.candidate_config.components,
                         "blocked_by": distillation_blockers,
@@ -4353,6 +4418,8 @@ def _register_guarded_pilot_trials(
                     "forbids materialization or ASHA registration."
                 ),
                 details={
+                    **round_context,
+                    "strategy": "paper_protocol",
                     "candidate_id": source.candidate_config.candidate_id,
                     "paper_ids": paper_ids_from_values(source),
                     "blocked_by": protocol_block.reason_codes,
