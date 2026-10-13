@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,6 +52,22 @@ class ResourceSchedulerConfig(BaseModel):
     enforce_full_run_windows: bool = True
     require_batch_tuning_result: bool = True
 
+    @classmethod
+    def from_env(cls) -> "ResourceSchedulerConfig":
+        """Build the scheduling policy, honoring explicit operator overrides.
+
+        The full-run start-window (20:00-08:00) is a shared-machine policy,
+        not a correctness gate: it only ever *defers* work, never changes
+        results.  An operator who owns the GPU budget must be able to start a
+        full run immediately, so ``YOLO_AGENT_ENFORCE_FULL_RUN_WINDOWS=0``
+        (or ``false``) opts out of the window deferral for the process.
+        """
+        overrides: dict[str, object] = {}
+        raw = os.environ.get("YOLO_AGENT_ENFORCE_FULL_RUN_WINDOWS")
+        if raw is not None and raw.strip().lower() in {"0", "false", "no", "off"}:
+            overrides["enforce_full_run_windows"] = False
+        return cls(**overrides)
+
 
 class ResourceDecision(BaseModel):
     """Scheduler decision for one queue item."""
@@ -71,7 +88,10 @@ class ResourceScheduler:
         snapshot: ResourceSnapshot | None = None,
         now: datetime | None = None,
     ) -> None:
-        self.config = config or ResourceSchedulerConfig()
+        # The environment override applies whenever the caller does not pass
+        # an explicit policy, so both scheduler construction sites
+        # (orchestrator._queue_resource_decisions and execute_queue) honor it.
+        self.config = config or ResourceSchedulerConfig.from_env()
         self.snapshot = snapshot
         self.now = now
 

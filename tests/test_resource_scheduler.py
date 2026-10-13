@@ -13,6 +13,7 @@ from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.resource_scheduler import (
     GPUResource,
     ResourceScheduler,
+    ResourceSchedulerConfig,
     ResourceSnapshot,
 )
 
@@ -137,6 +138,61 @@ def test_scheduler_pauses_high_risk_and_full_run_outside_budget_window() -> None
 
     assert decision.status == "paused"
     assert decision.reasons == ["high_risk_candidate_deferred", "outside_full_run_budget_window:14"]
+
+
+def test_scheduler_env_override_disables_full_run_window(monkeypatch) -> None:
+    """fix 43: the window deferral is a shared-machine policy, not a gate.
+
+    An operator who owns the GPU budget sets
+    YOLO_AGENT_ENFORCE_FULL_RUN_WINDOWS=0 and a full run starts immediately
+    outside the 20:00-08:00 window.  No explicit config passed -> the
+    environment applies at both scheduler construction sites.
+    """
+    monkeypatch.setenv("YOLO_AGENT_ENFORCE_FULL_RUN_WINDOWS", "0")
+    command = _train_command(
+        requirements=ResourceRequirements(
+            requires_gpu=True,
+            full_run=True,
+            allowed_start_hours=list(range(20, 24)) + list(range(0, 8)),
+        )
+    )
+    scheduler = ResourceScheduler(
+        snapshot=ResourceSnapshot(gpus=[GPUResource(gpu_id=0, util_percent=0, memory_used_mb=0, memory_total_mb=24000)]),
+        now=datetime(2026, 7, 5, 14, 0, 0),
+    )
+    assert scheduler.config.enforce_full_run_windows is False
+
+    decision = scheduler.evaluate(command)
+
+    assert decision.status == "runnable"
+
+
+def test_scheduler_env_override_keeps_window_for_truthy_values(monkeypatch) -> None:
+    """Only explicit opt-out values disable the window; anything else keeps it."""
+    command = _train_command(
+        requirements=ResourceRequirements(
+            requires_gpu=True,
+            full_run=True,
+            allowed_start_hours=[23],
+        )
+    )
+    monkeypatch.setenv("YOLO_AGENT_ENFORCE_FULL_RUN_WINDOWS", "1")
+    decision = ResourceScheduler(now=datetime(2026, 7, 5, 14, 0, 0)).evaluate(command)
+    assert decision.status == "paused"
+    assert decision.reasons == ["outside_full_run_budget_window:14"]
+
+    monkeypatch.delenv("YOLO_AGENT_ENFORCE_FULL_RUN_WINDOWS")
+    decision = ResourceScheduler(now=datetime(2026, 7, 5, 14, 0, 0)).evaluate(command)
+    assert decision.status == "paused"
+
+
+def test_scheduler_explicit_config_beats_env_override(monkeypatch) -> None:
+    """An explicitly passed policy is never clobbered by the environment."""
+    monkeypatch.setenv("YOLO_AGENT_ENFORCE_FULL_RUN_WINDOWS", "0")
+    config = ResourceSchedulerConfig(enforce_full_run_windows=True)
+    scheduler = ResourceScheduler(config=config, now=datetime(2026, 7, 5, 14, 0, 0))
+
+    assert scheduler.config.enforce_full_run_windows is True
 
 
 def test_scheduler_marks_retried_training_without_checkpoint_as_needs_resume() -> None:
