@@ -351,29 +351,17 @@ class PolicyMemoryStore:
         fidelity: PolicyFidelity | None = None,
     ) -> list[PolicyMemoryRecord]:
         """Return records matching all supplied filters."""
-        records = self.read()
-        if min_confidence is not None:
-            min_rank = CONFIDENCE_RANK[min_confidence]
-        else:
-            min_rank = None
-        return [
-            record
-            for record in records
-            if (action is None or record.action == action)
-            and (target is None or record.target == target)
-            and (metric_name is None or record.metric_name == metric_name)
-            and (dataset_version is None or record.dataset_version == dataset_version)
-            and (run_id is None or record.run_id == run_id)
-            and (
-                action_fingerprint_sha256 is None
-                or record.action_fingerprint_sha256 == action_fingerprint_sha256
-            )
-            and (
-                fidelity is None
-                or (record.action_fingerprint is not None and record.action_fingerprint.fidelity == fidelity)
-            )
-            and (min_rank is None or CONFIDENCE_RANK[record.confidence] >= min_rank)
-        ]
+        return _query_records(
+            self.read(),
+            action=action,
+            target=target,
+            metric_name=metric_name,
+            dataset_version=dataset_version,
+            run_id=run_id,
+            min_confidence=min_confidence,
+            action_fingerprint_sha256=action_fingerprint_sha256,
+            fidelity=fidelity,
+        )
 
     def summarize(
         self,
@@ -386,8 +374,10 @@ class PolicyMemoryStore:
         model_family: str | None = None,
     ) -> list[PolicyMemorySummary]:
         """Aggregate action effects into weighted posterior summaries."""
+        all_records = self.read()
         groups: dict[tuple[str, str | None, str | None], list[PolicyMemoryRecord]] = defaultdict(list)
-        for record in self.query(
+        for record in _query_records(
+            all_records,
             action=action,
             target=target,
             metric_name=metric_name,
@@ -396,7 +386,7 @@ class PolicyMemoryStore:
             fingerprint = record.action_fingerprint
             posterior_key = fingerprint.posterior_sha256 if fingerprint is not None else record.action_fingerprint_sha256
             groups[(posterior_key, record.target, record.metric_name)].append(record)
-        all_records = self.read()
+        transfer_index = _TransferCandidateIndex(all_records)
         summaries: list[PolicyMemorySummary] = []
         for (posterior_key_sha256, group_target, group_metric), records in sorted(
             groups.items(),
@@ -420,9 +410,10 @@ class PolicyMemoryStore:
             interval = _confidence_interval_95(effects, weights, mean_effect, variance)
             total_seed_count = sum(max(record.seed_count, 1) for record in records)
             fingerprint = records[0].action_fingerprint
+            transfer_sha256 = fingerprint.transfer_sha256 if fingerprint is not None else ""
             transfer = _pilot_full_stats(
-                all_records,
-                transfer_sha256=fingerprint.transfer_sha256 if fingerprint is not None else "",
+                transfer_index.candidates(transfer_sha256=transfer_sha256, action=records[0].action),
+                transfer_sha256=transfer_sha256,
                 action=records[0].action,
                 target=group_target,
                 metric_name=group_metric,
@@ -523,6 +514,43 @@ class PolicyMemoryStore:
             metric_name=metric_name,
             observed_pilot_delta=observed_pilot_delta,
         )
+
+
+def _query_records(
+    records: list[PolicyMemoryRecord],
+    *,
+    action: str | None = None,
+    target: str | None = None,
+    metric_name: str | None = None,
+    dataset_version: str | None = None,
+    run_id: str | None = None,
+    min_confidence: PolicyConfidence | None = None,
+    action_fingerprint_sha256: str | None = None,
+    fidelity: PolicyFidelity | None = None,
+) -> list[PolicyMemoryRecord]:
+    """Filter already-loaded records with the shared store query semantics."""
+    if min_confidence is not None:
+        min_rank = CONFIDENCE_RANK[min_confidence]
+    else:
+        min_rank = None
+    return [
+        record
+        for record in records
+        if (action is None or record.action == action)
+        and (target is None or record.target == target)
+        and (metric_name is None or record.metric_name == metric_name)
+        and (dataset_version is None or record.dataset_version == dataset_version)
+        and (run_id is None or record.run_id == run_id)
+        and (
+            action_fingerprint_sha256 is None
+            or record.action_fingerprint_sha256 == action_fingerprint_sha256
+        )
+        and (
+            fidelity is None
+            or (record.action_fingerprint is not None and record.action_fingerprint.fidelity == fidelity)
+        )
+        and (min_rank is None or CONFIDENCE_RANK[record.confidence] >= min_rank)
+    ]
 
 
 def stable_negative_action_reasons(
@@ -695,6 +723,76 @@ def _dataset_similarity_weight(
     return weight
 
 
+def _transfer_matching(
+    records: Iterable[PolicyMemoryRecord],
+    *,
+    transfer_sha256: str,
+    action: str,
+    target: str | None,
+    metric_name: str | None,
+    require_effect_delta: bool = False,
+) -> list[PolicyMemoryRecord]:
+    """Return records matching a transfer fingerprint or the action wildcard.
+
+    A record matches when its fingerprint carries the same transfer identity, or
+    when it is an unversioned wildcard observation of the same action.  Callers
+    that cannot use ``None`` effect deltas pass ``require_effect_delta=True`` to
+    mirror the historical stricter filter.
+    """
+    matching = [
+        record
+        for record in records
+        if record.action_fingerprint is not None
+        and (
+            record.action_fingerprint.transfer_sha256 == transfer_sha256
+            or (record.action == action and record.action_fingerprint.recipe_id is None)
+        )
+        and (target is None or record.target == target)
+        and (metric_name is None or record.metric_name in {metric_name, None})
+    ]
+    if require_effect_delta:
+        matching = [record for record in matching if record.effect_delta is not None]
+    return matching
+
+
+class _TransferCandidateIndex:
+    """One-pass index over memory records for pilot/full transfer statistics.
+
+    ``PolicyMemoryStore.summarize`` needs, per posterior group, the records that
+    match the group's transfer fingerprint or its action wildcard.  Scanning the
+    full store for every group is quadratic in practice (thousands of groups over
+    hundreds of thousands of records), so the two OR-branches of the transfer
+    filter are indexed once and merged per group.  Merged candidates are returned
+    deduplicated (both branches can match the same record) and in original store
+    order, so downstream statistics stay bit-identical to a full scan.
+    """
+
+    def __init__(self, records: list[PolicyMemoryRecord]) -> None:
+        self._by_transfer: dict[str, list[PolicyMemoryRecord]] = defaultdict(list)
+        self._wildcard_by_action: dict[str, list[PolicyMemoryRecord]] = defaultdict(list)
+        self._positions: dict[int, int] = {}
+        for position, record in enumerate(records):
+            self._positions[id(record)] = position
+            fingerprint = record.action_fingerprint
+            if fingerprint is None:
+                continue
+            self._by_transfer[fingerprint.transfer_sha256].append(record)
+            if fingerprint.recipe_id is None:
+                self._wildcard_by_action[record.action].append(record)
+
+    def candidates(self, *, transfer_sha256: str, action: str) -> list[PolicyMemoryRecord]:
+        """Return transfer/wildcard candidates for one group in store order."""
+        merged: dict[int, PolicyMemoryRecord] = {}
+        for record in (
+            *self._by_transfer.get(transfer_sha256, ()),
+            *self._wildcard_by_action.get(action, ()),
+        ):
+            merged.setdefault(id(record), record)
+        if len(merged) < 2:
+            return list(merged.values())
+        return sorted(merged.values(), key=lambda record: self._positions[id(record)])
+
+
 def pilot_to_full_prediction(
     records: Iterable[PolicyMemoryRecord],
     fingerprint: ActionFingerprint,
@@ -703,18 +801,14 @@ def pilot_to_full_prediction(
     metric_name: str | None = None,
     observed_pilot_delta: float | None = None,
 ) -> PilotToFullPrediction:
-    matching = [
-        record
-        for record in records
-        if record.action_fingerprint is not None
-        and (
-            record.action_fingerprint.transfer_sha256 == fingerprint.transfer_sha256
-            or (record.action == fingerprint.action and record.action_fingerprint.recipe_id is None)
-        )
-        and (target is None or record.target == target)
-        and (metric_name is None or record.metric_name in {metric_name, None})
-        and record.effect_delta is not None
-    ]
+    matching = _transfer_matching(
+        records,
+        transfer_sha256=fingerprint.transfer_sha256,
+        action=fingerprint.action,
+        target=target,
+        metric_name=metric_name,
+        require_effect_delta=True,
+    )
     stats = _pilot_full_stats(
         matching,
         transfer_sha256=fingerprint.transfer_sha256,
@@ -782,17 +876,13 @@ def _pilot_full_stats(
     target: str | None,
     metric_name: str | None,
 ) -> dict[str, Any]:
-    matching = [
-        record
-        for record in records
-        if record.action_fingerprint is not None
-        and (
-            record.action_fingerprint.transfer_sha256 == transfer_sha256
-            or (record.action == action and record.action_fingerprint.recipe_id is None)
-        )
-        and (target is None or record.target == target)
-        and (metric_name is None or record.metric_name in {metric_name, None})
-    ]
+    matching = _transfer_matching(
+        records,
+        transfer_sha256=transfer_sha256,
+        action=action,
+        target=target,
+        metric_name=metric_name,
+    )
     pilot_3 = [record.effect_delta for record in matching if _pilot_bucket(record.action_fingerprint.fidelity) == "pilot_3"]
     pilot_10 = [record.effect_delta for record in matching if _pilot_bucket(record.action_fingerprint.fidelity) == "pilot_10"]
     pilot = [record.effect_delta for record in matching if _pilot_bucket(record.action_fingerprint.fidelity) == "pilot"]
