@@ -7,6 +7,11 @@ pinned every child to the snapshot that was current when the driver started;
 a stale snapshot fails component contract validation and blocks candidates
 at runtime readiness.  Forks (and resumed rounds) must follow the base run's
 current disk binding instead.
+
+fix 41: the paper execution inventory binding is campaign-level state too.
+Forks that lose it seed a coverage ledger with expected_paper_count=0 and
+report paper_inventory_count: 0, so the planner believes the paper registry
+is empty.  The same disk-following inheritance covers those three keys.
 """
 
 from __future__ import annotations
@@ -195,3 +200,99 @@ def test_apply_base_snapshot_binding_noop_without_rebind(tmp_path: Path) -> None
 
     assert apply_base_snapshot_binding(round_context) is False
     assert round_context.metadata["research_snapshot_hash"] == OLD_HASH
+
+
+INVENTORY_PATH = "E:/codex/YOLO-Agent/runs/coverage-audit/paper_execution_inventory.yaml"
+INVENTORY_HASH = "61d9f6f299cce13a1f91a8877e930e913167d865d26c0b9d1f5d3010d60d937f"
+
+
+def test_fork_inherits_paper_execution_inventory_binding(tmp_path: Path) -> None:
+    """fix 41: forks inherit the base run's paper execution inventory binding.
+
+    Without it the child writes a coverage ledger with expected_paper_count=0
+    and every round summary reports paper_inventory_count: 0, even though the
+    base run is bound to the compatible-paper inventory.
+    """
+    base = _persisted_context(
+        tmp_path,
+        "campaign",
+        parent_dir=None,
+        snapshot_hash=OLD_HASH,
+        extra_metadata={
+            "paper_execution_inventory_path": INVENTORY_PATH,
+            "paper_execution_inventory_hash": INVENTORY_HASH,
+            "compatible_paper_count": 83,
+        },
+    )
+    # The round context was forked before the inventory was bound and does
+    # not carry the three keys at all.
+    round_context = _persisted_context(
+        tmp_path,
+        "campaign-r105",
+        parent_dir=base.run_dir,
+        snapshot_hash=OLD_HASH,
+    )
+
+    forker = NextRoundForker(round_context, None)  # type: ignore[arg-type]
+    child = forker._child_context("campaign-r106", tmp_path / "next_round.yaml", {}, [])
+    payload = forker._fork_context_payload(
+        child=child,
+        next_round={},
+        next_round_path=tmp_path / "next_round.yaml",
+        inherited_next_round_path=tmp_path / "parent_next_round.yaml",
+        missing_evidence=[],
+    )
+
+    assert child.metadata["paper_execution_inventory_path"] == INVENTORY_PATH
+    assert child.metadata["paper_execution_inventory_hash"] == INVENTORY_HASH
+    assert child.metadata["compatible_paper_count"] == 83
+    assert payload["paper_execution_inventory_path"] == INVENTORY_PATH
+    assert payload["paper_execution_inventory_hash"] == INVENTORY_HASH
+    assert payload["compatible_paper_count"] == 83
+
+
+def test_fork_without_inventory_binding_keys_absent_on_base(tmp_path: Path) -> None:
+    """A base run without the inventory binding must not fabricate one."""
+    base = _persisted_context(tmp_path, "campaign", parent_dir=None, snapshot_hash=OLD_HASH)
+    round_context = _persisted_context(
+        tmp_path,
+        "campaign-r1",
+        parent_dir=base.run_dir,
+        snapshot_hash=OLD_HASH,
+    )
+
+    forker = NextRoundForker(round_context, None)  # type: ignore[arg-type]
+    child = forker._child_context("campaign-r2", tmp_path / "next_round.yaml", {}, [])
+
+    assert child.metadata.get("paper_execution_inventory_path") is None
+    assert child.metadata.get("paper_execution_inventory_hash") is None
+    assert child.metadata.get("compatible_paper_count") is None
+
+
+def test_apply_base_snapshot_binding_refreshes_paper_execution_inventory(
+    tmp_path: Path,
+) -> None:
+    """A resumed round follows the base run's current inventory binding."""
+    base = _persisted_context(tmp_path, "campaign", parent_dir=None, snapshot_hash=OLD_HASH)
+    resumed = _persisted_context(
+        tmp_path,
+        "campaign-r105",
+        parent_dir=base.run_dir,
+        snapshot_hash=OLD_HASH,
+    )
+    # The base run was rebound to the inventory after the round was forked.
+    base.metadata.update(
+        {
+            "paper_execution_inventory_path": INVENTORY_PATH,
+            "paper_execution_inventory_hash": INVENTORY_HASH,
+            "compatible_paper_count": 83,
+        }
+    )
+    base.to_yaml()
+
+    assert apply_base_snapshot_binding(resumed) is True
+    assert resumed.metadata["paper_execution_inventory_path"] == INVENTORY_PATH
+    assert resumed.metadata["paper_execution_inventory_hash"] == INVENTORY_HASH
+    assert resumed.metadata["compatible_paper_count"] == 83
+    # Idempotent: a second call reports no change.
+    assert apply_base_snapshot_binding(resumed) is False

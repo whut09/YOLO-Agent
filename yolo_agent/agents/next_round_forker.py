@@ -226,6 +226,9 @@ class NextRoundForker:
                 "effective_maturity_version": snapshot_binding["effective_maturity_version"],
                 "paper_intelligence": snapshot_binding["paper_intelligence"],
                 "unavailable_reason": snapshot_binding["unavailable_reason"],
+                "paper_execution_inventory_path": snapshot_binding["paper_execution_inventory_path"],
+                "paper_execution_inventory_hash": snapshot_binding["paper_execution_inventory_hash"],
+                "compatible_paper_count": snapshot_binding["compatible_paper_count"],
                 "research_network_allowed": False,
                 "maturity_summary": snapshot_binding["maturity_summary"],
                 "parent_dataset_version": self.context.dataset_version,
@@ -287,6 +290,9 @@ class NextRoundForker:
             "effective_maturity_version": snapshot_binding["effective_maturity_version"],
             "paper_intelligence": snapshot_binding["paper_intelligence"],
             "unavailable_reason": snapshot_binding["unavailable_reason"],
+            "paper_execution_inventory_path": snapshot_binding["paper_execution_inventory_path"],
+            "paper_execution_inventory_hash": snapshot_binding["paper_execution_inventory_hash"],
+            "compatible_paper_count": snapshot_binding["compatible_paper_count"],
             "research_network_allowed": False,
             "maturity_summary": snapshot_binding["maturity_summary"],
             "parent_dataset_version": self.context.dataset_version,
@@ -306,6 +312,12 @@ class NextRoundForker:
 # current when the driver started, and a stale snapshot fails component
 # contract validation (frozen_adapter_hash_mismatch), which blocks candidates
 # at runtime readiness with missing_component_contract.
+# fix 41: the paper execution inventory binding (optimize_runner
+# ._bind_paper_execution_inventory) is campaign-level state too.  Forks that
+# lose it write a coverage ledger with expected_paper_count=0, every round
+# summary reports paper_inventory_count: 0, and the planner concludes the
+# paper registry is empty ("add a relevant executable method") even though
+# the base run is bound to the compatible-paper inventory.
 _SNAPSHOT_BINDING_KEYS = (
     "research_snapshot_hash",
     "research_snapshot_path",
@@ -317,6 +329,9 @@ _SNAPSHOT_BINDING_KEYS = (
     "maturity_summary",
     "paper_method_coverage_version",
     "effective_maturity_version",
+    "paper_execution_inventory_path",
+    "paper_execution_inventory_hash",
+    "compatible_paper_count",
 )
 _MAX_PARENT_WALK = 512
 
@@ -374,6 +389,10 @@ def base_run_snapshot_binding(context: RunContext) -> dict[str, Any]:
         "maturity_summary": dict(context.metadata.get("maturity_summary") or {}),
         "paper_method_coverage_version": context.metadata.get("paper_method_coverage_version"),
         "effective_maturity_version": context.metadata.get("effective_maturity_version"),
+        # fix 41: paper execution inventory binding (campaign-level state).
+        "paper_execution_inventory_path": context.metadata.get("paper_execution_inventory_path"),
+        "paper_execution_inventory_hash": context.metadata.get("paper_execution_inventory_hash"),
+        "compatible_paper_count": context.metadata.get("compatible_paper_count"),
     }
     binding.update({key: base_metadata[key] for key in _SNAPSHOT_BINDING_KEYS if key in base_metadata})
     return binding
