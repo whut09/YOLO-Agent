@@ -187,6 +187,276 @@ def test_objective_status_stops_at_configured_pilot_round_limit(tmp_path: Path) 
     assert status.stop_reason == "max_pilot_rounds_reached"
 
 
+def _matched_control_identity(objective: OptimizationObjective, seed: int) -> dict[str, object]:
+    """The exact match-key dimensions a pilot-round observation carries."""
+    return {
+        "protocol_hash": objective.baseline_protocol_hash,
+        "dataset_manifest_sha256": "dataset-sha",
+        "subset_manifest_sha256": f"subset-{seed}",
+        "seed": seed,
+        "epochs": 100,
+        "fidelity": "candidate_full",
+        "batch_policy_hash": "batch-policy",
+        "ultralytics_version": "9.0.0",
+        "imgsz": 640,
+        "eval_protocol_hash": "eval-protocol",
+    }
+
+
+def test_objective_status_excludes_matched_baseline_control_from_ranking(
+    tmp_path: Path,
+) -> None:
+    """fix 42: the matched baseline control must not top the candidate table.
+
+    The control re-observes the baseline as a current_observation with
+    candidate_id="matched_baseline_control" (r115 evidence: 54 such records
+    in the judgment input).  Its paired delta against the baseline is
+    identically zero, so before fix 42 it always ranked first
+    (best_candidate_id="matched_baseline_control", observed_delta=0.0) and
+    the paired guards compared the control against itself, masking the real
+    best candidate.
+    """
+    root = tmp_path / "runs"
+    objective = _objective()
+    store = EvidenceStore(root)
+
+    baseline_node = ExperimentNode(
+        node_id="node_baseline",
+        candidate_config=CandidateConfig(
+            candidate_id=objective.baseline_candidate_id,
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="coco2017",
+        seed=1,
+        command_spec=CommandSpec.ultralytics_train(
+            model="yolo26n.pt",
+            data="coco.yaml",
+            project="runs/ultralytics",
+            name="baseline",
+            metadata={"training_budget_profile": "baseline_full"},
+        ),
+    )
+    base_dir = store.create_run(objective.baseline_run_id)
+    ExperimentPlan(plan_id="baseline", nodes=[baseline_node]).to_yaml(
+        base_dir / "artifacts" / "experiment_plan.yaml"
+    )
+    store.log_candidate_metrics(
+        objective.baseline_run_id,
+        objective.baseline_candidate_id,
+        baseline_node.node_id,
+        {
+            objective.primary_metric: 0.38,
+            "latency_ms": 10.0,
+            "model_size_mb": 5.0,
+            "baseline_protocol_hash": objective.baseline_protocol_hash,
+        },
+        dataset_version="coco2017",
+        split="val2017",
+        source="test",
+    )
+
+    run_id = f"{objective.baseline_run_id}-r1"
+    identity = _matched_control_identity(objective, seed=1)
+    candidate_node = ExperimentNode(
+        node_id="node_candidate_seed_1",
+        candidate_config=CandidateConfig(
+            candidate_id="candidate-a",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="coco2017",
+        seed=1,
+        command_spec=CommandSpec.ultralytics_train(
+            model="yolo26n.pt",
+            data="coco.yaml",
+            project="runs/ultralytics",
+            name="candidate-1",
+            metadata={"training_budget_profile": "candidate_full"},
+        ),
+    )
+    control_node = ExperimentNode(
+        node_id="node_matched_control_seed_1",
+        candidate_config=CandidateConfig(
+            candidate_id="matched_baseline_control",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="coco2017",
+        seed=1,
+    )
+    candidate_dir = store.create_run(run_id)
+    ExperimentPlan(plan_id="candidate", nodes=[candidate_node, control_node]).to_yaml(
+        candidate_dir / "artifacts" / "experiment_plan.yaml"
+    )
+    # The paired baseline reference both observations match against.
+    store.log_candidate_metrics(
+        run_id,
+        objective.baseline_candidate_id,
+        "node_matched_control_seed_1",
+        {
+            objective.primary_metric: 0.38,
+            "latency_ms": 10.0,
+            "model_size_mb": 5.0,
+        },
+        dataset_version="coco2017",
+        split="val2017",
+        source="test",
+        evidence_role="baseline_reference",
+        **identity,
+    )
+    # The control re-observes the baseline: delta is identically zero.
+    store.log_candidate_metrics(
+        run_id,
+        "matched_baseline_control",
+        "node_matched_control_seed_1",
+        {
+            objective.primary_metric: 0.38,
+            "latency_ms": 10.0,
+            "model_size_mb": 5.0,
+            "baseline_protocol_hash": objective.baseline_protocol_hash,
+        },
+        dataset_version="coco2017",
+        split="val2017",
+        source="test",
+        evidence_role="current_observation",
+        **identity,
+    )
+    # The real candidate regresses on the baseline (r115 reality: every
+    # candidate's mean delta was negative, which is exactly why the zero
+    # control used to top the table).
+    store.log_candidate_metrics(
+        run_id,
+        "candidate-a",
+        "node_candidate_seed_1",
+        {
+            objective.primary_metric: 0.375,
+            "latency_ms": 10.4,
+            "model_size_mb": 5.1,
+            "baseline_protocol_hash": objective.baseline_protocol_hash,
+        },
+        dataset_version="coco2017",
+        split="val2017",
+        source="test",
+        **identity,
+    )
+
+    status = evaluate_optimization_objective(objective, run_root=root, base_run_id="coco-yolo26n")
+
+    assert status.best_candidate_id == "candidate-a"
+    assert status.best_value == pytest.approx(0.375)
+    assert status.observed_delta == pytest.approx(-0.005)
+    assert status.baseline_value == pytest.approx(0.38)
+    # The guards now describe the real candidate, not control-vs-control.
+    assert status.latency_regression == pytest.approx(0.04)
+    assert status.model_size_regression == pytest.approx(0.02)
+    assert status.guardrails_passed is True
+    assert "matched_baseline_control_missing" not in status.blockers
+
+
+def test_objective_control_only_round_has_no_ranked_candidate(tmp_path: Path) -> None:
+    """A round whose only current_observation is the control ranks nobody."""
+    root = tmp_path / "runs"
+    objective = _objective()
+    store = EvidenceStore(root)
+
+    baseline_node = ExperimentNode(
+        node_id="node_baseline",
+        candidate_config=CandidateConfig(
+            candidate_id=objective.baseline_candidate_id,
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="coco2017",
+        seed=1,
+        command_spec=CommandSpec.ultralytics_train(
+            model="yolo26n.pt",
+            data="coco.yaml",
+            project="runs/ultralytics",
+            name="baseline",
+            metadata={"training_budget_profile": "baseline_full"},
+        ),
+    )
+    base_dir = store.create_run(objective.baseline_run_id)
+    ExperimentPlan(plan_id="baseline", nodes=[baseline_node]).to_yaml(
+        base_dir / "artifacts" / "experiment_plan.yaml"
+    )
+    store.log_candidate_metrics(
+        objective.baseline_run_id,
+        objective.baseline_candidate_id,
+        baseline_node.node_id,
+        {
+            objective.primary_metric: 0.38,
+            "latency_ms": 10.0,
+            "model_size_mb": 5.0,
+            "baseline_protocol_hash": objective.baseline_protocol_hash,
+        },
+        dataset_version="coco2017",
+        split="val2017",
+        source="test",
+    )
+
+    run_id = f"{objective.baseline_run_id}-r1"
+    identity = _matched_control_identity(objective, seed=1)
+    control_node = ExperimentNode(
+        node_id="node_matched_control_seed_1",
+        candidate_config=CandidateConfig(
+            candidate_id="matched_baseline_control",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="coco2017",
+        seed=1,
+    )
+    candidate_dir = store.create_run(run_id)
+    ExperimentPlan(plan_id="control-only", nodes=[control_node]).to_yaml(
+        candidate_dir / "artifacts" / "experiment_plan.yaml"
+    )
+    store.log_candidate_metrics(
+        run_id,
+        objective.baseline_candidate_id,
+        "node_matched_control_seed_1",
+        {
+            objective.primary_metric: 0.38,
+            "latency_ms": 10.0,
+            "model_size_mb": 5.0,
+        },
+        dataset_version="coco2017",
+        split="val2017",
+        source="test",
+        evidence_role="baseline_reference",
+        **identity,
+    )
+    store.log_candidate_metrics(
+        run_id,
+        "matched_baseline_control",
+        "node_matched_control_seed_1",
+        {
+            objective.primary_metric: 0.38,
+            "latency_ms": 10.0,
+            "model_size_mb": 5.0,
+            "baseline_protocol_hash": objective.baseline_protocol_hash,
+        },
+        dataset_version="coco2017",
+        split="val2017",
+        source="test",
+        evidence_role="current_observation",
+        **identity,
+    )
+
+    status = evaluate_optimization_objective(objective, run_root=root, base_run_id="coco-yolo26n")
+
+    assert status.best_candidate_id is None
+    assert status.best_value is None
+    assert status.observed_delta is None
+    assert "matched_baseline_control_missing" in status.blockers
+
+
 def test_optimize_runner_persists_typed_objective(tmp_path: Path) -> None:
     dataset = tmp_path / "dataset"
     (dataset / "images" / "train").mkdir(parents=True)

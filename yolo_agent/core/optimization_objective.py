@@ -352,6 +352,18 @@ def evaluate_optimization_objective(
     for run_id, item in metric_records:
         if item.evidence_role != "current_observation" or item.inheritance_depth > 0:
             continue
+        # fix 42: the matched baseline control re-observes the baseline and
+        # enters the metric records as a current_observation with
+        # candidate_id="matched_baseline_control" (policy_stage_runner writes
+        # that exact id).  Its paired delta against its own baseline values is
+        # identically zero, so as a ranked "candidate" it always topped the
+        # table (best_candidate_id="matched_baseline_control",
+        # observed_delta=0.0), masking the real best candidate and turning
+        # every guard comparison into control-vs-control.  The control is a
+        # measurement anchor, not a candidate: exclude it from the ranking so
+        # best_* and the paired guards describe a real candidate.
+        if item.candidate_id == "matched_baseline_control":
+            continue
         _, delta = paired_metric_delta(item, all_metric_records)
         if delta is not None:
             candidates.setdefault(item.candidate_id, []).append((run_id, item, delta))
