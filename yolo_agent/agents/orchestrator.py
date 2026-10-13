@@ -216,9 +216,33 @@ class LoopOrchestrator:
         plan_path = self.context.artifact_path("active_learning_plan.json")
         return ActiveLearningPlan.model_validate(read_json(plan_path))
 
-    def next_round(self) -> list[StageResult]:
-        """Generate report and next-round checklist."""
-        return self.run_stages(["report", "next_round"])
+    def next_round(self, force: bool = False) -> list[StageResult]:
+        """Generate report and next-round checklist.
+
+        Stages already marked completed in the persisted loop state are skipped
+        unless ``force`` is set.  This mirrors the training-loop driver's
+        advance semantics (``_next_training_loop_step``) so an ASHA assignment
+        round that already advanced through report/next_round does not pay for
+        a second, artifact-identical execution when the assignment path calls
+        this method again.  Recovery paths that must regenerate the checklist
+        from freshly collected evidence pass ``force=True``.
+        """
+        results: list[StageResult] = []
+        for stage in ("report", "next_round"):
+            if not force and _stage_status(self, stage) == "completed":
+                results.append(
+                    StageResult(
+                        stage=stage,
+                        status="skipped",
+                        message=f"Stage {stage} already completed; skipping (force=True to rerun).",
+                    )
+                )
+                continue
+            result = self.run_stage(stage)
+            results.append(result)
+            if result.status in {"blocked", "failed"}:
+                break
+        return results
 
     def run_training_loop(
         self,

@@ -1926,7 +1926,9 @@ def test_planning_error_facts_fall_back_to_nearest_same_dataset_ancestor(tmp_pat
     )
     ErrorFactStore(tmp_path / "runs").append(base.run_id, [fact])
     base_orchestrator = LoopOrchestrator.from_run_dir(base.run_dir)
-    base_orchestrator.next_round()
+    # fix 40b: the fact was appended after the initial run already advanced
+    # through report/next_round, so regeneration must be explicit
+    base_orchestrator.next_round(force=True)
     next_round = yaml.safe_load(
         (base.run_dir / "artifacts" / "next_round.yaml").read_text(encoding="utf-8")
     )

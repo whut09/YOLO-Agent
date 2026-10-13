@@ -1853,7 +1853,9 @@ class AutoOptimizationLoopDriver:
             trial=updated_trial,
             observation=observation,
         )
-        child.next_round()
+        # fix 40b: recovery regenerates the checklist from the freshly collected
+        # evidence, so completed stages are re-run instead of skipped.
+        child.next_round(force=True)
         training_loop = _merge_evidence_recovery_loop(
             previous.training_loop,
             recovery_loop,
@@ -2124,7 +2126,9 @@ class AutoOptimizationLoopDriver:
                     if activated
                     else "assignment_shadow_evidence_invalid"
                 )
-                child.next_round()
+                # fix 40b: shadow activation adds evidence after the driver
+                # advance; regenerate the checklist instead of skipping it.
+                child.next_round(force=True)
                 summary_path = child.context.artifact_path("auto_round_summary.yaml")
                 result = AutoRoundResult(
                     round_index=round_index,
@@ -2183,6 +2187,9 @@ class AutoOptimizationLoopDriver:
             if not observation.evidence_complete:
                 status = "blocked"
                 stop_reason = "asha_evidence_incomplete"
+        # fix 40b: the training-loop advance already ran report/next_round when
+        # they were pending; skip completed stages so this safety net no longer
+        # re-executes them (and their policy-memory summarization) per round.
         child.next_round()
         summary_path = child.context.artifact_path("auto_round_summary.yaml")
         result = AutoRoundResult(

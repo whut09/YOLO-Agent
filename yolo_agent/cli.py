@@ -1505,6 +1505,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Generate report and next-round checklist.",
     )
     loop_next.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_next.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-run report and next-round stages even if already completed.",
+    )
     loop_next.set_defaults(handler=run_loop_next_command)
 
     loop_fork_next = loop_subparsers.add_parser(
@@ -2259,7 +2264,7 @@ def run_loop_dataset_promote_command(args: argparse.Namespace) -> int:
 
 def run_loop_next_command(args: argparse.Namespace) -> int:
     """Run loop report and next-round stages."""
-    return _print_loop_results(LoopOrchestrator.from_run_dir(args.run).next_round())
+    return _print_loop_results(LoopOrchestrator.from_run_dir(args.run).next_round(force=args.force))
 
 
 def run_loop_fork_next_command(args: argparse.Namespace) -> int:

@@ -1895,3 +1895,78 @@ def test_training_loop_driver_recovers_stale_running_before_staleness_block(
 
     assert result.stopped_reason != "queue_stale_blocked"
     assert result.queue_counts.get("running", 0) == 0
+
+
+def _advanced_round_orchestrator(tmp_path: Path, run_id: str) -> LoopOrchestrator:
+    """Drive one dry-run round through report and next-round to completion."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id=run_id,
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    node = ExperimentNode(
+        node_id="node_driver",
+        candidate_config=CandidateConfig(
+            candidate_id="driver_candidate",
+            base_model="yolo11n",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="dataset-v1",
+        command_spec=CommandSpec(command_type="train", command="echo", args=["hello"]),
+    )
+    ExperimentPlan(plan_id="driver-plan", nodes=[node]).to_yaml(
+        orchestrator.context.artifact_path("experiment_plan.yaml")
+    )
+    result = orchestrator.run_training_loop(
+        profile="debug",
+        executor="dry-run",
+        max_steps=8,
+        auto_import=True,
+    )
+    assert result.stopped_reason == "complete"
+    assert (orchestrator.context.run_dir / "report.md").exists()
+    assert (orchestrator.context.run_dir / "artifacts" / "next_round.yaml").exists()
+    return orchestrator
+
+
+def test_next_round_skips_completed_stages_unless_forced(tmp_path: Path) -> None:
+    """fix 40b: an already advanced round must not re-run report/next_round."""
+    orchestrator = _advanced_round_orchestrator(tmp_path, "next-round-skip-run")
+    report_attempts = orchestrator.state.stages["report"].attempts
+    next_round_attempts = orchestrator.state.stages["next_round"].attempts
+
+    # a fresh orchestrator sees the persisted state, exactly like the ASHA
+    # assignment path does when it reloads a child run
+    resumed = LoopOrchestrator.from_run_dir(orchestrator.context.run_dir)
+    skipped = resumed.next_round()
+    assert [item.status for item in skipped] == ["skipped", "skipped"]
+    assert all("already completed" in item.message for item in skipped)
+    assert resumed.state.stages["report"].attempts == report_attempts
+    assert resumed.state.stages["next_round"].attempts == next_round_attempts
+    assert (resumed.context.run_dir / "report.md").exists()
+
+    rerun = resumed.next_round(force=True)
+    assert [item.status for item in rerun] == ["completed", "completed"]
+    assert resumed.state.stages["report"].attempts == report_attempts + 1
+    assert resumed.state.stages["next_round"].attempts == next_round_attempts + 1
+
+
+def test_next_round_runs_only_incomplete_stages(tmp_path: Path) -> None:
+    """fix 40b: a half-advanced round regenerates only the missing stage."""
+    orchestrator = _advanced_round_orchestrator(tmp_path, "next-round-partial-run")
+    report_attempts = orchestrator.state.stages["report"].attempts
+    next_round_attempts = orchestrator.state.stages["next_round"].attempts
+
+    # simulate a round whose next_round stage was reset for a retry
+    orchestrator.state.mark("next_round", "pending", "Resetting next_round for retry.")
+    orchestrator.state.to_yaml(orchestrator.context.run_dir / "loop_state.yaml")
+
+    resumed = LoopOrchestrator.from_run_dir(orchestrator.context.run_dir)
+    results = resumed.next_round()
+    assert [item.status for item in results] == ["skipped", "completed"]
+    assert resumed.state.stages["report"].attempts == report_attempts
+    assert resumed.state.stages["next_round"].attempts == next_round_attempts + 1
