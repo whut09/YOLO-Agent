@@ -393,6 +393,113 @@ def test_execute_reenters_external_gpu_wait_for_live_recovery(tmp_path: Path) ->
     assert dry_run_result.queue_counts["needs_resume"] == 1
 
 
+def test_existing_queue_pure_resource_pause_falls_through_to_driver(tmp_path: Path) -> None:
+    """fix 44: a pure resource pause must not deadlock the entrypoint.
+
+    The scheduler paused the item (outside_full_run_budget_window); once the
+    operator overrides the window or the night window opens, only the
+    driver's refresh_queue can re-evaluate and unblock it.  Short-circuiting
+    on the paused item wedged the run forever: every rerun of the same
+    command hit the same paused item ("rerun the same command" was a lie).
+    """
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    initialized = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="window-pause",
+        run_root=tmp_path / "runs",
+        profile="debug",
+        execute=False,
+    )
+    queue = ExecutionQueue.from_yaml(initialized.queue_path)
+    item = queue.items[0]
+    item.status = "paused"
+    item.resource_blockers = ["outside_full_run_budget_window:10"]
+    queue.to_yaml(initialized.queue_path)
+
+    result = optimize_module._existing_running_queue_result(
+        kind="coco",
+        run_id="window-pause",
+        run_dir=initialized.run_dir,
+        requested_profile="debug",
+        executor="ultralytics-train",
+        preflight=[],
+        task_path=initialized.task_path,
+        plan_path=initialized.experiment_plan_path,
+        queue_path=initialized.queue_path,
+        execute=True,
+    )
+
+    # Falls through (None) so the driver's refresh_queue can re-evaluate.
+    assert result is None
+
+
+def test_existing_queue_blocked_by_resource_also_falls_through(tmp_path: Path) -> None:
+    """blocked_by_resource behaves like paused: the driver re-evaluates."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    initialized = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="resource-block",
+        run_root=tmp_path / "runs",
+        profile="debug",
+        execute=False,
+    )
+    queue = ExecutionQueue.from_yaml(initialized.queue_path)
+    queue.items[0].status = "blocked_by_resource"
+    queue.to_yaml(initialized.queue_path)
+
+    result = optimize_module._existing_running_queue_result(
+        kind="coco",
+        run_id="resource-block",
+        run_dir=initialized.run_dir,
+        requested_profile="debug",
+        executor="ultralytics-train",
+        preflight=[],
+        task_path=initialized.task_path,
+        plan_path=initialized.experiment_plan_path,
+        queue_path=initialized.queue_path,
+        execute=True,
+    )
+
+    assert result is None
+
+
+def test_existing_queue_mixed_needs_resume_still_short_circuits(tmp_path: Path) -> None:
+    """Evidence problems are not resource pauses: the short-circuit stays."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    initialized = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="mixed-block",
+        run_root=tmp_path / "runs",
+        profile="debug",
+        execute=False,
+    )
+    queue = ExecutionQueue.from_yaml(initialized.queue_path)
+    queue.items[0].status = "needs_evidence"
+    queue.to_yaml(initialized.queue_path)
+
+    result = optimize_module._existing_running_queue_result(
+        kind="coco",
+        run_id="mixed-block",
+        run_dir=initialized.run_dir,
+        requested_profile="debug",
+        executor="ultralytics-train",
+        preflight=[],
+        task_path=initialized.task_path,
+        plan_path=initialized.experiment_plan_path,
+        queue_path=initialized.queue_path,
+        execute=True,
+    )
+
+    assert result is not None
+    assert result.next_action
+
+
 def test_stop_marks_running_queue_and_prints_recovery(
     tmp_path: Path,
     monkeypatch,

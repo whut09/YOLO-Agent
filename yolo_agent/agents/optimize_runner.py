@@ -1545,6 +1545,27 @@ def _existing_running_queue_result(
     if counts.get("running", 0) <= 0:
         if running_profile == requested_profile and _queue_has_only_batch_tuning_blocker(queue):
             return None
+        # fix 44: a pure resource pause must not deadlock the entrypoint.
+        # This scheduler paused the item (e.g. outside_full_run_budget_window);
+        # when the policy context changes - the operator overrides the window
+        # via YOLO_AGENT_ENFORCE_FULL_RUN_WINDOWS, or the night window opens -
+        # only the driver's refresh_queue can re-evaluate and unblock it.
+        # Short-circuiting here wedges the run forever: the CLI says "rerun
+        # the same command" while every rerun hits the same paused item.
+        # With no running item and nothing but resource pauses, fall through
+        # and let the driver re-evaluate; it still defers when the policy
+        # actually says wait.
+        active_pause_kinds = {
+            status
+            for status in ("running", "paused", "blocked_by_resource", "needs_resume", "needs_evidence")
+            if counts.get(status, 0) > 0
+        }
+        if (
+            running_profile == requested_profile
+            and active_pause_kinds
+            and active_pause_kinds <= {"paused", "blocked_by_resource"}
+        ):
+            return None
         # External-GPU waits are a pure resource condition, independent of the
         # requested profile.  For an existing run without an explicit
         # --profile, the CLI request falls back to the preset default (debug)
