@@ -183,3 +183,63 @@ def test_external_gpu_wait_is_persisted_as_needs_resume() -> None:
 
     assert item.status == "needs_resume"
     assert item.resource_blockers == ["external_gpu_process"]
+
+
+def test_execution_queue_store_slims_oversized_stdout_on_save(tmp_path: Path) -> None:
+    """fix 45: saving should truncate huge captured streams so the yaml stays parseable."""
+    plan = ExperimentPlan(plan_id="plan-1", nodes=[_node()])
+    store = ExecutionQueueStore(tmp_path / "run-1")
+    queue = store.enqueue_from_plan("run-1", plan)
+    item = queue.items[0]
+
+    blob = "x" * 1_000_000
+    result = ExecutionResult(
+        run_id="run-1",
+        node_id=item.node_id,
+        candidate_id=item.candidate_id,
+        status="completed",
+        command=item.command,
+        stdout="HEAD" + blob + "TAIL",
+        stderr="e" * 20_000,
+    )
+    item.mark_result(result)
+    store.save(queue)
+    loaded = store.load()
+
+    saved_stdout = loaded.items[0].last_result.stdout
+    saved_stderr = loaded.items[0].last_result.stderr
+    assert len(saved_stdout) < 20_000
+    assert "HEAD" in saved_stdout and "TAIL" in saved_stdout
+    assert "truncated by ExecutionQueueStore.save" in saved_stdout
+    assert "*_ultralytics_stdout.log" in saved_stdout
+    assert len(saved_stderr) < 20_000
+    assert "truncated by ExecutionQueueStore.save" in saved_stderr
+
+    # The caller's in-memory object must keep the full stream.
+    assert queue.items[0].last_result.stdout == "HEAD" + blob + "TAIL"
+
+
+def test_execution_queue_store_keeps_small_streams_intact(tmp_path: Path) -> None:
+    """fix 45: streams under the cap should round-trip byte-identical."""
+    plan = ExperimentPlan(plan_id="plan-1", nodes=[_node()])
+    store = ExecutionQueueStore(tmp_path / "run-1")
+    queue = store.enqueue_from_plan("run-1", plan)
+    item = queue.items[0]
+
+    item.mark_result(
+        ExecutionResult(
+            run_id="run-1",
+            node_id=item.node_id,
+            candidate_id=item.candidate_id,
+            status="completed",
+            command=item.command,
+            stdout="all good\n",
+            stderr="",
+        )
+    )
+    store.save(queue)
+    store.update_item(store.load().items[0])
+    reloaded = store.load()
+
+    assert reloaded.items[0].last_result.stdout == "all good\n"
+    assert reloaded.items[0].last_result.stderr == ""
