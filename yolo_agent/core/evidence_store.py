@@ -10,6 +10,7 @@ from typing import Any, Literal
 import yaml
 
 from yolo_agent.core.artifact_manifest import ArtifactManifest, ArtifactManifestEntry
+from yolo_agent.core.error_facts import _replace_with_retry
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
 
 
@@ -63,7 +64,9 @@ class EvidenceStore:
         with temp_path.open("w", encoding="utf-8") as file:
             for record in [*retained, *incoming]:
                 file.write(json.dumps(record.model_dump(mode="json"), sort_keys=True) + "\n")
-        temp_path.replace(records_path)
+        # fix 46: tolerate transient Windows locks (WinError 5) on the rename,
+        # same rationale as ErrorFactStore._replace_with_retry.
+        _replace_with_retry(temp_path, records_path)
         return records_path
 
     def log_candidate_metrics(
