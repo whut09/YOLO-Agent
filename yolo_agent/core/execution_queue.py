@@ -301,13 +301,57 @@ class ExecutionQueue(BaseModel, YAMLModelMixin):
 class ExecutionQueueStore:
     """Filesystem store for runs/{run_id}/execution_queue.yaml."""
 
+    # fix 45: cap per-item captured streams on disk. The full console output is
+    # already streamed to run artifacts (*_ultralytics_stdout.log); keeping an
+    # unbounded copy here has produced multi-megabyte queue files whose quoted
+    # scalars blow past yaml scanners (80MB / 930k-line execution_queue.yaml).
+    _STDOUT_CAP_CHARS = 16_000
+    _STDOUT_HEAD_CHARS = 8_000
+    _STDOUT_TAIL_CHARS = 6_000
+
     def __init__(self, run_dir: Path | str) -> None:
         self.run_dir = Path(run_dir)
         self.path = self.run_dir / "execution_queue.yaml"
 
+    def _slim_last_result(self, result: ExecutionResult) -> ExecutionResult:
+        """Return a copy of ``result`` with oversized streams truncated."""
+        updates: dict[str, str] = {}
+        for field in ("stdout", "stderr"):
+            value = getattr(result, field, None)
+            if not isinstance(value, str):
+                continue
+            if len(value) <= self._STDOUT_CAP_CHARS:
+                continue
+            head = value[: self._STDOUT_HEAD_CHARS]
+            tail = value[-self._STDOUT_TAIL_CHARS :]
+            dropped = len(value) - self._STDOUT_HEAD_CHARS - self._STDOUT_TAIL_CHARS
+            marker = (
+                f"\n... [fix 45: {dropped} chars truncated by ExecutionQueueStore.save; "
+                f"full output lives in the run's *_ultralytics_stdout.log artifact] ...\n"
+            )
+            updates[field] = head + marker + tail
+        if not updates:
+            return result
+        return result.model_copy(update=updates)
+
     def save(self, queue: ExecutionQueue) -> Path:
-        """Persist the queue."""
+        """Persist the queue with oversized captured streams slimmed down."""
         queue.refresh_updated_at()
+        slimmed: dict[str, ExecutionResult] = {}
+        for item in queue.items:
+            if item.last_result is None:
+                continue
+            replacement = self._slim_last_result(item.last_result)
+            if replacement is not item.last_result:
+                slimmed[item.queue_id] = replacement
+        if slimmed:
+            items = [
+                item.model_copy(update={"last_result": slimmed[item.queue_id]})
+                if item.queue_id in slimmed
+                else item
+                for item in queue.items
+            ]
+            queue = queue.model_copy(update={"items": items})
         return queue.to_yaml(self.path)
 
     def load(self) -> ExecutionQueue:
