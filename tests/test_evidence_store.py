@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.experiment_graph import MetricEvidence
 
 
 def test_evidence_store_logs_and_loads_run(tmp_path: Path) -> None:
@@ -94,3 +95,75 @@ def test_evidence_store_rejects_nested_run_ids(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         store.create_run("../bad")
+
+
+def _metric(candidate: str, node: str, value: float) -> MetricEvidence:
+    return MetricEvidence(
+        candidate_id=candidate,
+        node_id=node,
+        metric_name="map50",
+        value=value,
+        dataset_version="dataset-v1",
+        validator="unit-test",
+    )
+
+
+def test_upsert_metric_records_retries_transient_windows_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """fix 46: a transient WinError 5 on the rename should retry, not fail the run."""
+    from pathlib import Path as _Path
+
+    store = EvidenceStore(tmp_path / "runs")
+    store.upsert_metric_records("run-46", [_metric("baseline", "node-baseline", 0.5)])
+
+    original_replace = _Path.replace
+    calls = {"count": 0}
+
+    def flaky_replace(self: _Path, target: object) -> object:
+        if str(target).endswith("metrics_by_node.jsonl"):
+            calls["count"] += 1
+            if calls["count"] <= 2:
+                raise PermissionError(5, "Access is denied")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(_Path, "replace", flaky_replace)
+    import time as _time
+
+    monkeypatch.setattr(_time, "sleep", lambda _s: None)
+
+    records_path = store.upsert_metric_records("run-46", [_metric("baseline", "node-baseline", 0.55)])
+
+    assert calls["count"] == 3
+    assert records_path.is_file()
+    assert records_path.read_text(encoding="utf-8").count("node-baseline") >= 1
+    assert not list(records_path.parent.glob("*.tmp"))
+
+
+def test_upsert_metric_records_fails_closed_after_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """fix 46: a persistent lock should surface after the retry budget."""
+    from pathlib import Path as _Path
+
+    store = EvidenceStore(tmp_path / "runs")
+    records_path = store.upsert_metric_records("run-46", [_metric("baseline", "node-baseline", 0.5)])
+
+    original_replace = _Path.replace
+
+    def always_locked(self: _Path, target: object) -> object:
+        if str(target).endswith("metrics_by_node.jsonl"):
+            raise PermissionError(5, "Access is denied")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(_Path, "replace", always_locked)
+    import time as _time
+
+    monkeypatch.setattr(_time, "sleep", lambda _s: None)
+
+    with pytest.raises(PermissionError):
+        store.upsert_metric_records("run-46", [_metric("baseline", "node-baseline", 0.6)])
+
+    # Staged tmp keeps every attempt lossless; the previous file is intact.
+    assert records_path.is_file()
+    assert "0.5" in records_path.read_text(encoding="utf-8")
